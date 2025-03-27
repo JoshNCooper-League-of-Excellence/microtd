@@ -146,24 +146,76 @@ init :: fn() {
 import math::RAND_MAX;
 
 point_obstructs_path :: fn(ctx: *mut Context, point: Vector2) -> bool {
-  path_width := ctx.cell_size.x;
+  // Convert the point to grid coordinates
+  point_cell := Vector2.{
+    x: point.x / ctx.cell_size.x,
+    y: point.y / ctx.cell_size.y,
+  };
+
   mut last_node := ctx.path[0];
+  mut first := true;
   for node in ctx.path {
-    rect := Rectangle.{
-      x: min(last_node.x, node.x) * ctx.screen_size.x - path_width / 2,
-      y: min(last_node.y, node.y) * ctx.screen_size.y - path_width / 2,
-      width: abs(node.x - last_node.x) * ctx.screen_size.x + path_width,
-      height: abs(node.y - last_node.y) * ctx.screen_size.y + path_width,
+    
+    if first {
+      first = false;
+      continue;
+    }
+
+    start_cell := Vector2.{
+      x: (last_node.x * ctx.screen_size.x / ctx.cell_size.x) as s32,
+      y: (last_node.y * ctx.screen_size.y / ctx.cell_size.y) as s32,
     };
-    if CheckCollisionPointRec(point, rect) {
+    end_cell := Vector2.{
+      x: (node.x * ctx.screen_size.x / ctx.cell_size.x) as s32,
+      y: (node.y * ctx.screen_size.y / ctx.cell_size.y) as s32,
+    };
+
+    // Bresenham's line algorithm to traverse grid cells
+    mut dx := abs(end_cell.x - start_cell.x);
+    mut dy := abs(end_cell.y - start_cell.y);
+    mut sx: s32;
+    if start_cell.x < end_cell.x {
+      sx = 1;
+    } else {
+      sx = -1;
+    }
+
+    mut sy: s32;
+    if start_cell.y < end_cell.y {
+      sy = 1;
+    } else {
+      sy = -1;
+    }
+    mut err := dx - dy;
+
+    mut current_cell := start_cell;
+    while current_cell.x != end_cell.x || current_cell.y != end_cell.y {
+      // Check if the point's grid cell matches the current cell
+      if current_cell.x == point_cell.x && current_cell.y == point_cell.y {
+        return true;
+      }
+
+      e2 := 2 * err;
+      if e2 > -dy {
+        err -= dy;
+        current_cell.x += sx;
+      }
+      if e2 < dx {
+        err += dx;
+        current_cell.y += sy;
+      }
+    }
+
+    // Check the last cell (end_cell)
+    if end_cell.x == point_cell.x && end_cell.y == point_cell.y {
       return true;
     }
+
     last_node = node;
   }
-  return false;
+
+  return false; // No collision with any path segment
 }
-
-
 run :: fn(ctx: *mut Context) {
 
   mut timer: rayui::Timer;
