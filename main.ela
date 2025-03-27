@@ -40,7 +40,10 @@ Enemy :: struct;
 Tower :: struct {
   sprite: *mut Sprite,
   target: *mut Enemy,
+
   position: Vector2,
+  active: bool,
+
   id: u64,
   targeting_radius: u32,
   hit_timer: Timer,
@@ -68,8 +71,7 @@ Context :: struct {
   path: List!<Vector2>,
   cell_size: Vector2,
 
-
-  towers: List!<*mut Tower>,
+  towers: List!<Tower>,
   enemies: List!<Enemy>,
 
   background_sprite: Sprite,
@@ -79,7 +81,7 @@ Context :: struct {
 
 impl Context {
   new :: fn() -> #self {
-    mut self: #self = .{ 
+    mut self: #self = .{
       screen_size: .{
         x: GetScreenWidth(),
         y: GetScreenHeight(),
@@ -104,6 +106,18 @@ impl Context {
     };
 
     self.towers.initialize(N_CELLS_X * N_CELLS_Y);
+
+    mut x, mut y := (0, 0);
+    for cell in self.towers.iter_mut() {
+      cell.active = false;
+      cell.position = .{x: (x * self.cell_size.x), y: (y * self.cell_size.y)};
+      x += 1;
+      if x >= N_CELLS_X {
+        y += 1;
+        x = 0;
+      }
+    }
+
     println(self.towers.length);
 
 
@@ -115,22 +129,19 @@ impl Context {
 }
 
 impl Tower {
-  new :: fn(ctx: *mut Context) -> *mut #self {
+  enable :: fn(*mut self, ctx: *mut Context) {
     #static id: u64 = 0;
-    mut self: #self = .{
-      sprite: &mut ctx.tower_sprite,
-      id: id++,
-      target: null,
-      targeting_radius: 96,
-      hit_timer: .{
-        interval: 0.5, // TODO adjust.
-      },
-      damage: 1,
-      health: 1,
+    self.sprite = &mut ctx.tower_sprite;
+    self.id = id++;
+    self.target = null;
+    self.targeting_radius = 96;
+    self.hit_timer = .{
+      interval: 0.5,
     };
-    
-    return new(self);
-  }  
+    self.damage = 0.5;
+    self.health = 10;
+    self.active = true;
+  }
 }
 
 impl Enemy {
@@ -164,18 +175,10 @@ init :: fn() {
 }
 
 import math::RAND_MAX;
-
-point_obstructs_path :: fn(ctx: *mut Context, point: Vector2) -> bool {
-  // Convert the point to grid coordinates
-  point_cell := Vector2.{
-    x: point.x / ctx.cell_size.x,
-    y: point.y / ctx.cell_size.y,
-  };
-
+point_obstructs_path :: fn(ctx: *mut Context, tower: *mut Tower) -> bool {
   mut last_node := ctx.path[0];
   mut first := true;
   for node in ctx.path {
-    
     if first {
       first = false;
       continue;
@@ -210,7 +213,8 @@ point_obstructs_path :: fn(ctx: *mut Context, point: Vector2) -> bool {
 
     mut current_cell := start_cell;
     while current_cell.x != end_cell.x || current_cell.y != end_cell.y {
-      if current_cell.x == point_cell.x && current_cell.y == point_cell.y {
+      if current_cell.x == (tower.position.x / ctx.cell_size.x) as s32 &&
+         current_cell.y == (tower.position.y / ctx.cell_size.y) as s32 {
         return true;
       }
 
@@ -225,7 +229,8 @@ point_obstructs_path :: fn(ctx: *mut Context, point: Vector2) -> bool {
       }
     }
 
-    if end_cell.x == point_cell.x && end_cell.y == point_cell.y {
+    if end_cell.x == (tower.position.x / ctx.cell_size.x) as s32 &&
+       end_cell.y == (tower.position.y / ctx.cell_size.y) as s32 {
       return true;
     }
 
@@ -253,9 +258,31 @@ run :: fn(ctx: *mut Context) {
         height: ctx.screen_size.y,
       }, 0, WHITE);
 
+      mut last_point : Vector2 = .{
+        x: ctx.path[0].x * ctx.screen_size.x,
+        y: ctx.path[0].y * ctx.screen_size.y
+      };
 
-      { 
-        mut enemies_dead: List!<*mut Enemy>;
+      for point in ctx.path {
+        point = .{
+          x: point.x * ctx.screen_size.x,
+          y: point.y * ctx.screen_size.y
+        };
+
+        DrawLine(
+          point.x as s32,
+          point.y as s32,
+          last_point.x as s32,
+          last_point.y as s32,
+          ColorAlpha(PURPLE, 0.55)
+        );
+
+        last_point = point;
+      }
+
+      {
+        mut dead_enemies: List!<*mut Enemy>;
+        
         // move the enemies, draw their sprites.
         for enemy in ctx.enemies.iter_mut() {
           rectangle : Rectangle = .{
@@ -270,65 +297,44 @@ run :: fn(ctx: *mut Context) {
 
           { // targeting
 
-            /*             
+            /*
               targeting_circle := (
                 rectangle.x, rectangle.y,
                 enemy.targeting_radius,
-              ); 
+              );
             */
 
-            mut closest_tower: (*mut Tower, Vector2, u64);
-            mut closest_enemy: *mut Enemy;
+            mut closest_tower: *mut Tower;
 
-            mut x, mut y := (0, 0);
-            mut index := 0;
-
-            for tower in ctx.towers {
-              if tower {
-              
-                tower_point := Vector2.{
-                  x: x * ctx.cell_size.x,
-                  y: y * ctx.cell_size.y,
-                };
-
-                if CheckCollisionPointCircle(tower_point, enemy.position, enemy.targeting_radius) {
-                  if !closest_tower.0 {
-                    closest_tower = (tower, tower_point, index);
+            for tower in ctx.towers.iter_mut() {
+              if tower.active {
+                if CheckCollisionPointCircle(tower.position, enemy.position, enemy.targeting_radius) {
+                  if !closest_tower {
+                    closest_tower = tower;
                   } else {
-                    distance := Vector2Distance(enemy.position, closest_tower.1);
-                    current :=  Vector2Distance(enemy.position, tower_point);
+                    distance := Vector2Distance(enemy.position, closest_tower.position);
+                    current :=  Vector2Distance(enemy.position, tower.position);
                     if distance > current {
-                      closest_tower = (tower, tower_point, index);
+                      closest_tower = tower;
                     }
                   }
                 }
-              
-              }
 
-              index++; // TODO: why is this not just x * y? for some reason we can't do that.
-              x += 1;
-              if x >= N_CELLS_X {
-                y += 1;
-                x = 0;
               }
             }
 
-            if closest_tower.0 && enemy.hit_timer.tick() {
-              mut tower, _, index := closest_tower;
-
-              pre := tower.health;
-              tower.health -= enemy.damage;
-              if tower.health <= 0.0 {
-                free(ctx.towers.data[index]);
-                ctx.towers.data[index]=null;
+            if closest_tower && enemy.hit_timer.tick() {
+              closest_tower.health -= enemy.damage;
+              if closest_tower.health <= 0.0 {
+                closest_tower.active = false;
               }
             }
           }
 
           { // Pathing
-            
+
             normalized_target := ctx.path[enemy.point_index];
-            target : Vector2 = .{ 
+            target : Vector2 = .{
               x: normalized_target.x * ctx.screen_size.x,
               y: normalized_target.y * ctx.screen_size.y,
             };
@@ -340,7 +346,7 @@ run :: fn(ctx: *mut Context) {
               enemy.position = Vector2Add(enemy.position, Vector2Scale(direction, speed));
             } else {
               if enemy.point_index >= ctx.path.length - 1 {
-                enemies_dead.push(enemy);
+                dead_enemies.push(enemy);
               }
               enemy.point_index++;
             }
@@ -348,120 +354,85 @@ run :: fn(ctx: *mut Context) {
           }
         }
 
-        mut x, mut y := (0, 0);
-        mut index := 0;
-        for tower in ctx.towers {
-          mut closest_enemy: (*mut Enemy, u64); 
-
-          if tower {
-            tower_point := Vector2.{
-              x: x * ctx.cell_size.x,
-              y: y * ctx.cell_size.y,
-            };
-
-            for enemy in ctx.enemies.iter_mut() {
-              if CheckCollisionPointCircle(enemy.position, tower_point, tower.targeting_radius) {
-                if !closest_enemy.0 {
-                  closest_enemy = (enemy, index);
-                } else {
-                  distance := Vector2Distance(tower.position, (closest_enemy.0).position);
-                  current :=  Vector2Distance(tower.position, enemy.position);
-                  if distance > current {
-                    closest_enemy = (enemy, index);
-                  }
-                }
-              }
-            }
-          }
-
-          if closest_enemy.1 && tower.hit_timer.tick() {
-            enemy, index := closest_enemy;
-            enemy.health -= tower.damage;
-
-            if enemy.health <= 0.0 {
-              ctx.enemies.remove(*enemy, fn(other: Enemy, seek: Enemy) -> bool {
-                return other.id == seek.id;
-              });
-            }
-          }
-          index++;
-          x += 1;
-          if x >= N_CELLS_X {
-            y += 1;
-            x = 0;
-          }
-        }
-
-        for enemy in enemies_dead {
+        for enemy in dead_enemies {
           ctx.enemies.remove(*enemy, fn(other: Enemy, seek: Enemy) -> bool {
             return other.id == seek.id;
           });
         }
       }
 
-      { // Draw the path as a line.
-        mut last_point : Vector2 = .{
-          x: ctx.path[0].x * ctx.screen_size.x, 
-          y: ctx.path[0].y * ctx.screen_size.y
-        };
-        for point in ctx.path {
-          point = .{
-            x: point.x * ctx.screen_size.x, 
-            y: point.y * ctx.screen_size.y
-          };
-
-          DrawLine(
-            point.x as s32, 
-            point.y as s32, 
-            last_point.x as s32, 
-            last_point.y as s32, 
-            ColorAlpha(PURPLE, 0.55)
-          );
-
-          last_point = point;
-        }
-      }
 
       { // Draw the tower grid as cell lines.
-        mut x, mut y := (0, 0);
         for tower in ctx.towers.iter_mut() {
           tower_rect := Rectangle.{
-            x: x * ctx.cell_size.x,
-            y: y * ctx.cell_size.y,
+            x: tower.position.x,
+            y: tower.position.y,
             width: ctx.cell_size.x,
             height: ctx.cell_size.y,
           };
+
+          if tower.active {
+            printlnf("tower: %, pos=%, active=%", (tower.id, tower.position, tower.active));
+
+            mut closest_enemy: *mut Enemy;
+
+            for enemy in ctx.enemies.iter_mut() {
+              if CheckCollisionPointCircle(enemy.position, tower.position, tower.targeting_radius) {
+                if !closest_enemy {
+                  closest_enemy = enemy;
+                } else {
+                  distance := fabs(Vector2Distance(tower.position, closest_enemy.position));
+                  current  :=  fabs(Vector2Distance(tower.position, enemy.position));
+                  if distance > current {
+                    closest_enemy = enemy;
+                  }
+                }
+              }
+            }
+
+            if closest_enemy {
+              if tower.hit_timer.tick() {
+                closest_enemy.health -= tower.damage;
+                tower.target = closest_enemy;
+                if closest_enemy.health <= 0.0 {
+                  ctx.enemies.remove(*closest_enemy, fn(other: Enemy, seek: Enemy) -> bool {
+                    return other.id == seek.id;
+                  });
+                  tower.target = null;
+                }
+              }
+            } else {
+              tower.target = null;
+            }
+
+            DrawCircle(tower_rect.x as s32, tower_rect.y as s32, 24, ORANGE);
+            mut rotation := 0;
+            if tower.target {
+              angle := Vector2Subtract(tower.target.position, tower.position);
+              angle_radians := atan2(angle.y, -angle.x);
+              rotation = angle_radians * (180.0 / PI);
+              DrawCircle(tower.target.position.x as s32, tower.target.position.y as s32, 16, WHITE);
+            }
+
+            tower.sprite.draw(tower_rect, rotation, WHITE);
+            DrawCircle(tower.position.x as s32, 
+              tower.position.y as s32, 
+              tower.targeting_radius, ColorAlpha(RED, 0.25));
+          }
 
           cursor_point := GetMousePosition();
           mut color := ColorAlpha(BLUE, 0.175);
 
           if (CheckCollisionPointRec(cursor_point, tower_rect)) {
             color = WHITE;
-            if !(*tower) &&
+            if !tower.active &&
               IsMouseButtonPressed(MouseButton::MOUSE_BUTTON_LEFT) &&
-              !point_obstructs_path(ctx, .{x: x * ctx.cell_size.x, y: y * ctx.cell_size.y}) {
-              *tower = Tower::new(ctx);
+              !point_obstructs_path(ctx, tower) {
+              tower.enable(ctx);
             }
           }
 
-          DrawRectangleLines(x * ctx.cell_size.x as s32,
-                            y * ctx.cell_size.y as s32, 
-                            ctx.cell_size.x as s32, 
-                            ctx.cell_size.y as s32, 
-                            color
-          );
-
-          if *tower {
-            rotation := 0.0; //// TODO: calculate rotation based on target.
-            (*tower).sprite.draw(tower_rect, 0.0, WHITE);
-            DrawCircle(tower_rect.x as s32 + (ctx.cell_size.x / 2), tower_rect.y as s32 + (ctx.cell_size.y / 2), (*tower).targeting_radius, ColorAlpha(RED, 0.25));
-          }
-
-          x += 1;
-          if x >= N_CELLS_X {
-            y += 1;
-            x = 0;
-          }
+          DrawRectangleLinesEx(tower_rect, 1.0, color);
         }
       }
 
