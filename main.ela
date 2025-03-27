@@ -278,11 +278,14 @@ run :: fn(ctx: *mut Context) {
             */
 
             mut closest_tower: (*mut Tower, Vector2, u64);
+            mut closest_enemy: *mut Enemy;
+
             mut x, mut y := (0, 0);
             mut index := 0;
 
             for tower in ctx.towers {
               if tower {
+              
                 tower_point := Vector2.{
                   x: x * ctx.cell_size.x,
                   y: y * ctx.cell_size.y,
@@ -299,6 +302,7 @@ run :: fn(ctx: *mut Context) {
                     }
                   }
                 }
+              
               }
 
               index++; // TODO: why is this not just x * y? for some reason we can't do that.
@@ -341,6 +345,50 @@ run :: fn(ctx: *mut Context) {
               enemy.point_index++;
             }
 
+          }
+        }
+
+        mut x, mut y := (0, 0);
+        mut index := 0;
+        for tower in ctx.towers {
+          mut closest_enemy: (*mut Enemy, u64); 
+
+          if tower {
+            tower_point := Vector2.{
+              x: x * ctx.cell_size.x,
+              y: y * ctx.cell_size.y,
+            };
+
+            for enemy in ctx.enemies.iter_mut() {
+              if CheckCollisionPointCircle(enemy.position, tower_point, tower.targeting_radius) {
+                if !closest_enemy.0 {
+                  closest_enemy = (enemy, index);
+                } else {
+                  distance := Vector2Distance(tower.position, (closest_enemy.0).position);
+                  current :=  Vector2Distance(tower.position, enemy.position);
+                  if distance > current {
+                    closest_enemy = (enemy, index);
+                  }
+                }
+              }
+            }
+          }
+
+          if closest_enemy.1 && tower.hit_timer.tick() {
+            enemy, index := closest_enemy;
+            enemy.health -= tower.damage;
+
+            if enemy.health <= 0.0 {
+              ctx.enemies.remove(*enemy, fn(other: Enemy, seek: Enemy) -> bool {
+                return other.id == seek.id;
+              });
+            }
+          }
+          index++;
+          x += 1;
+          if x >= N_CELLS_X {
+            y += 1;
+            x = 0;
           }
         }
 
