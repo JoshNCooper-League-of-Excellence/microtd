@@ -1,0 +1,57 @@
+
+
+[x]: Setup ela/raylib
+
+[ ]: Map
+  [x]: Draw background.
+  [x]: Create grid to place towers.
+  [ ]: Create end zone for failure to kill thing.
+
+[ ]: Enemies.
+  [ ]: Spawning
+  [x]: Pathing
+  [ ]: Dying
+  [ ]: Dealing damage when failed to be killed
+
+[ ]: Tower.
+  [ ]: Targeting.
+  [ ]: Attack Radius/ Damage.
+  [ ]: (optimistic) Upgrades?
+
+[ ]: Other
+  [ ]: Rounds
+  [ ]: Upgrades
+  [ ]: Some kind of special mechanic that makes the game somewhat unique?
+
+[ ]: UI
+  [ ]: Main menu
+  [ ]: Round over menu
+  [ ]: Score/ Currency display
+  [ ]: Health on towers/ enemies?
+  [ ]: Damage numbers?
+
+Tower {
+  Radius: base::(32px),
+  Damage: base::(1 hp/ hit),
+  Rate:   base::(1 hit/s),
+  Health: base::(5 hp),
+};
+
+Enemy {
+  Radius: base::(16 px),
+  Damage: base::(0.5 hp/hit),
+  Rate:   base::(0.5 hit/s),
+  Health: base::(10 hp?),
+};
+
+Path points in 128 * 128 space.
+.[
+  .{x: 0,    y: 19},
+  .{x: 92,   y: 19},
+  .{x: 92,   y: 44},
+  .{x: 18,   y: 44},
+  .{x: 18,   y: 95},
+  .{x: 47,   y: 95},
+  .{x: 47,   y: 71},
+  .{x: 126,  y: 71},
+]

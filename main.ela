@@ -1,0 +1,242 @@
+import rayui::*;
+import fmt::{
+  printlnf,
+  println,
+  format,
+};
+
+N_CELLS_X :: 16;
+N_CELLS_Y :: 12;
+
+
+Sprite :: struct {
+  texture: Texture2D,
+  source: Rectangle,
+  origin: Vector2,
+}
+
+impl Sprite {
+  new :: fn(path: str) -> #self {
+    texture := LoadTexture(path.data);
+    source := Rectangle.{
+      x: 0,
+      y: 0,
+      width: texture.width,
+      height: texture.height,
+    };
+
+    return .{
+      texture: texture,
+      source: source,
+    };
+  }
+
+  draw :: fn(self, destination: Rectangle, rotation: f32, tint: Color) {
+    DrawTexturePro(self.texture, self.source, destination, self.origin, rotation, tint);
+  }
+}
+
+Tower :: struct {}
+
+Enemy :: struct {
+  point_index: s32,
+  position: Vector2,
+  sprite: *mut Sprite,
+  id: u64,
+  speed: f32,
+}
+
+Context :: struct {
+  screen_size: Vector2,
+  path: List!<Vector2>,
+  cell_size: Vector2,
+
+
+  tower_grid: List!<*mut Tower>,
+  enemies: List!<Enemy>,
+
+  background_sprite: Sprite,
+  enemy_sprite: Sprite,
+}
+
+impl Context {
+  new :: fn() -> #self {
+    mut self: #self = .{ 
+      screen_size: .{
+        x: GetScreenWidth(),
+        y: GetScreenHeight(),
+      },
+
+      // Path points in 0 -> 1 space.
+      path: List!<Vector2>::init(.[
+        .{x: 0.0,             y: 17.0 / 128.0}, // begin
+        .{x: 92.0  / 128.0,   y: 17.0 / 128.0},
+        .{x: 92.0  / 128.0,   y: 48.0 / 128.0},
+        .{x: 21.0  / 128.0,   y: 48.0 / 128.0},
+        .{x: 21.0  / 128.0,   y: 92.0 / 128.0},
+        .{x: 45.0  / 128.0,   y: 92.0 / 128.0},
+        .{x: 45.0  / 128.0,   y: 71.0 / 128.0},
+        .{x: 127.0 / 128.0,   y: 71.0 / 128.0}, // end
+      ]),
+    };
+
+    self.cell_size = .{
+      x: self.screen_size.x / N_CELLS_X,
+      y: self.screen_size.y / N_CELLS_Y
+    };
+
+    self.tower_grid.initialize(N_CELLS_X * N_CELLS_Y);
+    println(self.tower_grid.length);
+
+
+    self.background_sprite = Sprite::new("assets/map.png");
+    self.enemy_sprite = Sprite::new("assets/enemy.png");
+    return self;
+  }
+}
+
+impl Enemy {
+  new :: fn(ctx: *mut Context) -> #self {
+    mut self: #self = .{
+      position: ctx.path[0],
+      sprite: &mut ctx.enemy_sprite
+    };
+    self.sprite.origin = .{
+      x: self.sprite.texture.width,
+      y: self.sprite.texture.height
+    };
+
+    self.speed = 5.0;
+    #static id := 0 as u64;
+    self.id = id++;
+    return self;
+  }
+}
+
+init :: fn() {
+  SetTraceLogLevel(TraceLogLevel::LOG_NONE);
+  InitWindow(800, 600, "Hello, Raylib!"c);
+  SetTargetFPS(60);
+}
+
+import math::RAND_MAX;
+
+run :: fn(ctx: *mut Context) {
+
+  mut timer: rayui::Timer;
+  timer.interval = 1;
+  while !WindowShouldClose() {
+    
+    if timer.tick() && ctx.enemies.length < 5 {
+      ctx.enemies.push(Enemy::new(ctx));
+    }
+
+    BeginDrawing();
+      // draw the background.
+      ctx.background_sprite.draw(.{
+        x: 0, y: 0,
+        width: ctx.screen_size.x,
+        height: ctx.screen_size.y,
+      }, 0, WHITE);
+
+      { 
+        mut enemies_dead: List!<*mut Enemy>;
+        // move the enemies, draw their sprites.
+        for enemy in ctx.enemies.iter_mut() {
+          rectangle : Rectangle = .{
+            x: enemy.position.x,
+            y: enemy.position.y,
+            width: 32,
+            height: 32,
+          };
+
+          enemy.sprite.draw(rectangle, 0.0, WHITE);
+
+          { // Pathing
+            
+            normalized_target := ctx.path[enemy.point_index];
+            target : Vector2 = .{ 
+              x: normalized_target.x * ctx.screen_size.x,
+              y: normalized_target.y * ctx.screen_size.y,
+            };
+
+            speed := enemy.speed;
+            distance := Vector2Distance(enemy.position, target);
+            if distance > speed {
+              direction := Vector2Normalize(Vector2Subtract(target, enemy.position));
+              enemy.position = Vector2Add(enemy.position, Vector2Scale(direction, speed));
+            } else {
+              if enemy.point_index >= ctx.path.length - 1 {
+                println("FAILURE YOU ARE A FAILURE");
+                enemies_dead.push(enemy);
+              }
+              enemy.point_index++;
+            }
+
+          }
+        }
+
+        for enemy in enemies_dead {
+          ctx.enemies.remove(*enemy, fn(other: Enemy, seek: Enemy) -> bool {
+            return other.id == seek.id;
+          });
+        }
+      }
+
+      { // Draw the path as a line.
+        mut last_point : Vector2 = .{
+          x: ctx.path[0].x * ctx.screen_size.x, 
+          y: ctx.path[0].y * ctx.screen_size.y
+        };
+        for point in ctx.path {
+          point = .{
+            x: point.x * ctx.screen_size.x, 
+            y: point.y * ctx.screen_size.y
+          };
+          DrawLine(point.x as s32, point.y as s32, last_point.x as s32, last_point.y as s32, ColorAlpha(PURPLE, 0.55));
+          last_point = point;
+        }
+      }
+
+      { // Draw the tower grid as cell lines.
+        mut x, mut y := (0, 0);
+        for cell in ctx.tower_grid {
+          cell_rectangle := Rectangle.{
+            x: x * ctx.cell_size.x,
+            y: y * ctx.cell_size.y,
+            width: ctx.cell_size.x,
+            height: ctx.cell_size.y,
+          };
+
+          cursor_point := GetMousePosition();
+          mut color := ColorAlpha(BLUE, 0.175);
+
+          if (CheckCollisionPointRec(cursor_point, cell_rectangle)) {
+            color = WHITE;
+          }
+
+          DrawRectangleLines(x * ctx.cell_size.x as s32,
+                            y * ctx.cell_size.y as s32, 
+                            ctx.cell_size.x as s32, 
+                            ctx.cell_size.y as s32, 
+                            color
+          );
+
+          x += 1;
+          if x >= N_CELLS_X {
+            y += 1;
+            x = 0;
+          }
+        }
+      }
+
+      // DrawFPS(0, 0);
+    EndDrawing();
+  }
+}
+
+main :: fn() {
+  init();
+  mut ctx := Context::new();
+  run(&mut ctx);
+}
