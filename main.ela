@@ -405,7 +405,7 @@ run :: fn(ctx: *mut Context) {
               tower.target = null;
             }
 
-            DrawCircle(tower_rect.x as s32, tower_rect.y as s32, 24, ORANGE);
+            DrawCircleV(tower.position, 24, ORANGE);
             mut rotation := 0;
             if tower.target {
               angle := Vector2Subtract(tower.target.position, tower.position);
@@ -415,9 +415,7 @@ run :: fn(ctx: *mut Context) {
             }
 
             tower.sprite.draw(tower_rect, rotation, WHITE);
-            DrawCircle(tower.position.x as s32, 
-              tower.position.y as s32, 
-              tower.targeting_radius, ColorAlpha(RED, 0.25));
+            DrawCircleV(tower.position, tower.targeting_radius, ColorAlpha(RED, 0.25));
           }
 
           cursor_point := GetMousePosition();
