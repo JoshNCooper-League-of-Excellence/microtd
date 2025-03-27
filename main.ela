@@ -42,6 +42,7 @@ Tower :: struct {
   target: *mut Enemy,
   position: Vector2,
   id: u64,
+  targeting_radius: u32,
 }
 
 Enemy :: struct {
@@ -50,6 +51,8 @@ Enemy :: struct {
   sprite: *mut Sprite,
   id: u64,
   speed: f32,
+  targeting_radius: u32,
+  target: *mut Tower,
 }
 
 Context :: struct {
@@ -110,11 +113,9 @@ impl Tower {
       sprite: &mut ctx.tower_sprite,
       id: id++,
       target: null,
+      targeting_radius: 96,
     };
-    // self.sprite.origin = .{
-      // x: self.sprite.texture.width, 
-      // y: self.sprite.texture.height
-    // };
+    
     return new(self);
   }  
 }
@@ -124,6 +125,7 @@ impl Enemy {
     mut self: #self = .{
       position: ctx.path[0],
       sprite: &mut ctx.enemy_sprite
+      targeting_radius: 32,
     };
     self.sprite.origin = .{
       x: self.sprite.texture.width,
@@ -190,7 +192,6 @@ point_obstructs_path :: fn(ctx: *mut Context, point: Vector2) -> bool {
 
     mut current_cell := start_cell;
     while current_cell.x != end_cell.x || current_cell.y != end_cell.y {
-      // Check if the point's grid cell matches the current cell
       if current_cell.x == point_cell.x && current_cell.y == point_cell.y {
         return true;
       }
@@ -206,7 +207,6 @@ point_obstructs_path :: fn(ctx: *mut Context, point: Vector2) -> bool {
       }
     }
 
-    // Check the last cell (end_cell)
     if end_cell.x == point_cell.x && end_cell.y == point_cell.y {
       return true;
     }
@@ -216,12 +216,12 @@ point_obstructs_path :: fn(ctx: *mut Context, point: Vector2) -> bool {
 
   return false; // No collision with any path segment
 }
+
 run :: fn(ctx: *mut Context) {
 
   mut timer: rayui::Timer;
   timer.interval = 1;
   while !WindowShouldClose() {
-    
     if timer.tick() && ctx.enemies.length < 5 {
       ctx.enemies.push(Enemy::new(ctx));
     }
@@ -235,6 +235,7 @@ run :: fn(ctx: *mut Context) {
         height: ctx.screen_size.y,
       }, 0, WHITE);
 
+
       { 
         mut enemies_dead: List!<*mut Enemy>;
         // move the enemies, draw their sprites.
@@ -247,6 +248,8 @@ run :: fn(ctx: *mut Context) {
           };
 
           enemy.sprite.draw(rectangle, 0.0, WHITE);
+          DrawCircle(rectangle.x as s32, rectangle.y as s32, enemy.targeting_radius, ColorAlpha(YELLOW, 0.5));
+
 
           { // Pathing
             
@@ -304,8 +307,8 @@ run :: fn(ctx: *mut Context) {
 
       { // Draw the tower grid as cell lines.
         mut x, mut y := (0, 0);
-        for cell in ctx.tower_grid.iter_mut() {
-          cell_rectangle := Rectangle.{
+        for tower in ctx.tower_grid.iter_mut() {
+          tower_rect := Rectangle.{
             x: x * ctx.cell_size.x,
             y: y * ctx.cell_size.y,
             width: ctx.cell_size.x,
@@ -315,12 +318,12 @@ run :: fn(ctx: *mut Context) {
           cursor_point := GetMousePosition();
           mut color := ColorAlpha(BLUE, 0.175);
 
-          if (CheckCollisionPointRec(cursor_point, cell_rectangle)) {
+          if (CheckCollisionPointRec(cursor_point, tower_rect)) {
             color = WHITE;
-            if !(*cell) &&
+            if !(*tower) &&
               IsMouseButtonDown(MouseButton::MOUSE_BUTTON_LEFT) &&
               !point_obstructs_path(ctx, .{x: x * ctx.cell_size.x, y: y * ctx.cell_size.y}) {
-              *cell = Tower::new(ctx);
+              *tower = Tower::new(ctx);
             }
           }
 
@@ -331,9 +334,10 @@ run :: fn(ctx: *mut Context) {
                             color
           );
 
-          if *cell {
+          if *tower {
             rotation := 0.0; //// TODO: calculate rotation based on target.
-            (*cell).sprite.draw(cell_rectangle, 0.0, WHITE);
+            (*tower).sprite.draw(tower_rect, 0.0, WHITE);
+            DrawCircle(tower_rect.x as s32 + (ctx.cell_size.x / 2), tower_rect.y as s32 + (ctx.cell_size.y / 2), (*tower).targeting_radius, ColorAlpha(RED, 0.25));
           }
 
           x += 1;

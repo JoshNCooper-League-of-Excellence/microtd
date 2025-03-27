@@ -5,15 +5,16 @@
 [ ]: Map
   [x]: Draw background.
   [x]: Create grid to place towers.
-  [ ]: Create end zone for failure to kill thing.
+  [x]: Create end zone for failure to kill thing.
 
 [ ]: Enemies.
-  [ ]: Spawning
+  [1/2]: Spawning
   [x]: Pathing
-  [ ]: Dying
+  [1/2]: Dying
   [ ]: Dealing damage when failed to be killed
 
 [ ]: Tower.
+  [x]: Placement, not allowed on path
   [ ]: Targeting.
   [ ]: Attack Radius/ Damage.
   [ ]: (optimistic) Upgrades?
@@ -31,14 +32,14 @@
   [ ]: Damage numbers?
 
 Tower {
-  Radius: base::(32px),
+  Radius: base::(96px),
   Damage: base::(1 hp/ hit),
   Rate:   base::(1 hit/s),
   Health: base::(5 hp),
 };
 
 Enemy {
-  Radius: base::(16 px),
+  Radius: base::(32 px),
   Damage: base::(0.5 hp/hit),
   Rate:   base::(0.5 hit/s),
   Health: base::(10 hp?),
