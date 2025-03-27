@@ -43,6 +43,10 @@ Tower :: struct {
   position: Vector2,
   id: u64,
   targeting_radius: u32,
+  hit_timer: Timer,
+
+  health: f32,
+  damage: f32,
 }
 
 Enemy :: struct {
@@ -53,6 +57,10 @@ Enemy :: struct {
   speed: f32,
   targeting_radius: u32,
   target: *mut Tower,
+  hit_timer: Timer,
+
+  health: f32,
+  damage: f32,
 }
 
 Context :: struct {
@@ -61,7 +69,7 @@ Context :: struct {
   cell_size: Vector2,
 
 
-  tower_grid: List!<*mut Tower>,
+  towers: List!<*mut Tower>,
   enemies: List!<Enemy>,
 
   background_sprite: Sprite,
@@ -95,8 +103,8 @@ impl Context {
       y: self.screen_size.y / N_CELLS_Y
     };
 
-    self.tower_grid.initialize(N_CELLS_X * N_CELLS_Y);
-    println(self.tower_grid.length);
+    self.towers.initialize(N_CELLS_X * N_CELLS_Y);
+    println(self.towers.length);
 
 
     self.background_sprite = Sprite::new("assets/map.png");
@@ -114,6 +122,11 @@ impl Tower {
       id: id++,
       target: null,
       targeting_radius: 96,
+      hit_timer: .{
+        interval: 0.5, // TODO adjust.
+      },
+      damage: 1,
+      health: 1,
     };
     
     return new(self);
@@ -126,6 +139,11 @@ impl Enemy {
       position: ctx.path[0],
       sprite: &mut ctx.enemy_sprite
       targeting_radius: 32,
+      hit_timer: .{
+        interval: 1,
+      },
+      damage: 0.5,
+      health: 3,
     };
     self.sprite.origin = .{
       x: self.sprite.texture.width,
@@ -250,6 +268,58 @@ run :: fn(ctx: *mut Context) {
           enemy.sprite.draw(rectangle, 0.0, WHITE);
           DrawCircle(rectangle.x as s32, rectangle.y as s32, enemy.targeting_radius, ColorAlpha(YELLOW, 0.5));
 
+          { // targeting
+
+            /*             
+              targeting_circle := (
+                rectangle.x, rectangle.y,
+                enemy.targeting_radius,
+              ); 
+            */
+
+            mut closest_tower: (*mut Tower, Vector2, u64);
+            mut x, mut y := (0, 0);
+            mut index := 0;
+
+            for tower in ctx.towers {
+              if tower {
+                tower_point := Vector2.{
+                  x: x * ctx.cell_size.x,
+                  y: y * ctx.cell_size.y,
+                };
+
+                if CheckCollisionPointCircle(tower_point, enemy.position, enemy.targeting_radius) {
+                  if !closest_tower.0 {
+                    closest_tower = (tower, tower_point, index);
+                  } else {
+                    distance := Vector2Distance(enemy.position, closest_tower.1);
+                    current :=  Vector2Distance(enemy.position, tower_point);
+                    if distance > current {
+                      closest_tower = (tower, tower_point, index);
+                    }
+                  }
+                }
+              }
+
+              index++; // TODO: why is this not just x * y? for some reason we can't do that.
+              x += 1;
+              if x >= N_CELLS_X {
+                y += 1;
+                x = 0;
+              }
+            }
+
+            if closest_tower.0 && enemy.hit_timer.tick() {
+              mut tower, _, index := closest_tower;
+
+              pre := tower.health;
+              tower.health -= enemy.damage;
+              if tower.health <= 0.0 {
+                free(ctx.towers.data[index]);
+                ctx.towers.data[index]=null;
+              }
+            }
+          }
 
           { // Pathing
             
@@ -266,7 +336,6 @@ run :: fn(ctx: *mut Context) {
               enemy.position = Vector2Add(enemy.position, Vector2Scale(direction, speed));
             } else {
               if enemy.point_index >= ctx.path.length - 1 {
-                println("FAILURE YOU ARE A FAILURE");
                 enemies_dead.push(enemy);
               }
               enemy.point_index++;
@@ -307,7 +376,7 @@ run :: fn(ctx: *mut Context) {
 
       { // Draw the tower grid as cell lines.
         mut x, mut y := (0, 0);
-        for tower in ctx.tower_grid.iter_mut() {
+        for tower in ctx.towers.iter_mut() {
           tower_rect := Rectangle.{
             x: x * ctx.cell_size.x,
             y: y * ctx.cell_size.y,
@@ -321,7 +390,7 @@ run :: fn(ctx: *mut Context) {
           if (CheckCollisionPointRec(cursor_point, tower_rect)) {
             color = WHITE;
             if !(*tower) &&
-              IsMouseButtonDown(MouseButton::MOUSE_BUTTON_LEFT) &&
+              IsMouseButtonPressed(MouseButton::MOUSE_BUTTON_LEFT) &&
               !point_obstructs_path(ctx, .{x: x * ctx.cell_size.x, y: y * ctx.cell_size.y}) {
               *tower = Tower::new(ctx);
             }
