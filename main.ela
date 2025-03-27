@@ -36,7 +36,13 @@ impl Sprite {
   }
 }
 
-Tower :: struct {}
+Enemy :: struct;
+Tower :: struct {
+  sprite: *mut Sprite,
+  target: *mut Enemy,
+  position: Vector2,
+  id: u64,
+}
 
 Enemy :: struct {
   point_index: s32,
@@ -57,6 +63,7 @@ Context :: struct {
 
   background_sprite: Sprite,
   enemy_sprite: Sprite,
+  tower_sprite: Sprite,
 }
 
 impl Context {
@@ -91,8 +98,25 @@ impl Context {
 
     self.background_sprite = Sprite::new("assets/map.png");
     self.enemy_sprite = Sprite::new("assets/enemy.png");
+    self.tower_sprite = Sprite::new("assets/bow.png");
     return self;
   }
+}
+
+impl Tower {
+  new :: fn(ctx: *mut Context) -> *mut #self {
+    #static id: u64 = 0;
+    mut self: #self = .{
+      sprite: &mut ctx.tower_sprite,
+      id: id++,
+      target: null,
+    };
+    // self.sprite.origin = .{
+      // x: self.sprite.texture.width, 
+      // y: self.sprite.texture.height
+    // };
+    return new(self);
+  }  
 }
 
 impl Enemy {
@@ -121,6 +145,25 @@ init :: fn() {
 
 import math::RAND_MAX;
 
+point_obstructs_path :: fn(ctx: *mut Context, point: Vector2) -> bool {
+  path_width := ctx.cell_size.x;
+  mut last_node := ctx.path[0];
+  for node in ctx.path {
+    rect := Rectangle.{
+      x: min(last_node.x, node.x) * ctx.screen_size.x - path_width / 2,
+      y: min(last_node.y, node.y) * ctx.screen_size.y - path_width / 2,
+      width: abs(node.x - last_node.x) * ctx.screen_size.x + path_width,
+      height: abs(node.y - last_node.y) * ctx.screen_size.y + path_width,
+    };
+    if CheckCollisionPointRec(point, rect) {
+      return true;
+    }
+    last_node = node;
+  }
+  return false;
+}
+
+
 run :: fn(ctx: *mut Context) {
 
   mut timer: rayui::Timer;
@@ -132,6 +175,7 @@ run :: fn(ctx: *mut Context) {
     }
 
     BeginDrawing();
+
       // draw the background.
       ctx.background_sprite.draw(.{
         x: 0, y: 0,
@@ -193,14 +237,22 @@ run :: fn(ctx: *mut Context) {
             x: point.x * ctx.screen_size.x, 
             y: point.y * ctx.screen_size.y
           };
-          DrawLine(point.x as s32, point.y as s32, last_point.x as s32, last_point.y as s32, ColorAlpha(PURPLE, 0.55));
+
+          DrawLine(
+            point.x as s32, 
+            point.y as s32, 
+            last_point.x as s32, 
+            last_point.y as s32, 
+            ColorAlpha(PURPLE, 0.55)
+          );
+
           last_point = point;
         }
       }
 
       { // Draw the tower grid as cell lines.
         mut x, mut y := (0, 0);
-        for cell in ctx.tower_grid {
+        for cell in ctx.tower_grid.iter_mut() {
           cell_rectangle := Rectangle.{
             x: x * ctx.cell_size.x,
             y: y * ctx.cell_size.y,
@@ -213,6 +265,11 @@ run :: fn(ctx: *mut Context) {
 
           if (CheckCollisionPointRec(cursor_point, cell_rectangle)) {
             color = WHITE;
+            if !(*cell) &&
+              IsMouseButtonDown(MouseButton::MOUSE_BUTTON_LEFT) &&
+              !point_obstructs_path(ctx, .{x: x * ctx.cell_size.x, y: y * ctx.cell_size.y}) {
+              *cell = Tower::new(ctx);
+            }
           }
 
           DrawRectangleLines(x * ctx.cell_size.x as s32,
@@ -221,6 +278,11 @@ run :: fn(ctx: *mut Context) {
                             ctx.cell_size.y as s32, 
                             color
           );
+
+          if *cell {
+            rotation := 0.0; //// TODO: calculate rotation based on target.
+            (*cell).sprite.draw(cell_rectangle, 0.0, WHITE);
+          }
 
           x += 1;
           if x >= N_CELLS_X {
