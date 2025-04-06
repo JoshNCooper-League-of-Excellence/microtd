@@ -6,8 +6,8 @@ import fmt::{
 };
 import math::RAND_MAX;
 
-N_CELLS_X :: 16;
-N_CELLS_Y :: 12;
+const N_CELLS_X := 16;
+const N_CELLS_Y := 12;
 
 Sprite :: struct {
   texture: Texture2D,
@@ -412,7 +412,7 @@ run :: fn(ctx: *mut Context) {
         mut color := ColorAlpha(BLUE, 0.175);
         if (CheckCollisionPointRec(cursor_point, tower_rect)) {
           color = WHITE;
-          MB_L :: MouseButton::MOUSE_BUTTON_LEFT;
+          const MB_L := MouseButton::MOUSE_BUTTON_LEFT;
 
           if !tower.active && IsMouseButtonPressed(MB_L) && !point_obstructs_path(ctx, tower) {
             tower.enable(ctx);
