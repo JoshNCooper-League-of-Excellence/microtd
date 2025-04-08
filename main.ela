@@ -50,6 +50,8 @@ Tower :: struct {
 
   health: f32,
   damage: f32,
+
+  rotation: f32,
 }
 
 Enemy :: struct {
@@ -132,6 +134,10 @@ impl Tower {
   enable :: fn(*mut self, ctx: *mut Context) {
     #static id: u64 = 0;
     self.sprite = &mut ctx.tower_sprite;
+    self.sprite.origin = .{
+      x: self.sprite.texture.width,
+      y: self.sprite.texture.height,
+    };
     self.id = id++;
     self.target = null;
     self.targeting_radius = 96;
@@ -426,15 +432,21 @@ run :: fn(ctx: *mut Context) {
           then continue;
 
         DrawCircleV(logical_position, 5, RED);
-        mut rotation := 0;
+
         if tower.target {
           angle := Vector2Subtract(tower.target.position, logical_position);
-          angle_radians := atan2(angle.y, -angle.x);
-          rotation = angle_radians * (180.0 / PI);
+          angle_radians := atan2(-angle.y, -angle.x);
+          tower.rotation = angle_radians * (180.0 / PI);
           DrawCircleV(tower.target.position, 16, WHITE);
         }
 
-        tower.sprite.draw(tower_rect, rotation, WHITE);
+        tower.sprite.draw(.{
+          x: logical_position.x,
+          y: logical_position.y,
+          width: tower_rect.width,
+          height: tower_rect.height,
+        }, tower.rotation, WHITE);
+        
         DrawCircleV(logical_position, tower.targeting_radius, ColorAlpha(RED, 0.25));
 
         // Targeting enemies and dealing damage.
