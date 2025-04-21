@@ -9,14 +9,14 @@ import math::RAND_MAX;
 const N_CELLS_X := 16;
 const N_CELLS_Y := 12;
 
-Sprite :: struct {
+struct Sprite {
   texture: Texture2D,
   source: Rectangle,
   origin: Vector2,
 }
 
 impl Sprite {
-  new :: fn(path: str) -> #self {
+  fn new(path: str) -> Self {
     texture := LoadTexture(path.data);
     source := Rectangle.{
       x: 0,
@@ -31,13 +31,12 @@ impl Sprite {
     };
   }
 
-  draw :: fn(self, destination: Rectangle, rotation: f32, tint: Color) {
+  fn draw(self, destination: Rectangle, rotation: f32, tint: Color) {
     DrawTexturePro(self.texture, self.source, destination, self.origin, rotation, tint);
   }
 }
 
-Enemy :: struct;
-Tower :: struct {
+struct Tower {
   sprite: *mut Sprite,
   target: *mut Enemy,
 
@@ -54,7 +53,7 @@ Tower :: struct {
   rotation: f32,
 }
 
-Enemy :: struct {
+struct Enemy {
   point_index: s32,
   position: Vector2,
   sprite: *mut Sprite,
@@ -68,7 +67,7 @@ Enemy :: struct {
   damage: f32,
 }
 
-Context :: struct {
+struct Context {
   screen_size: Vector2,
   path: List!<Vector2>,
   cell_size: Vector2,
@@ -82,8 +81,8 @@ Context :: struct {
 }
 
 impl Context {
-  new :: fn() -> #self {
-    mut self: #self = .{
+  fn new() -> Self {
+    mut self: Self = .{
       screen_size: .{
         x: GetScreenWidth(),
         y: GetScreenHeight(),
@@ -131,7 +130,7 @@ impl Context {
 }
 
 impl Tower {
-  enable :: fn(*mut self, ctx: *mut Context) {
+  fn enable(*mut self, ctx: *mut Context) {
     #static id: u64 = 0;
     self.sprite = &mut ctx.tower_sprite;
     self.sprite.origin = .{
@@ -147,7 +146,7 @@ impl Tower {
     self.active = true;
   }
 
-  get_logical :: fn(self, ctx: *mut Context) -> (Vector2, Rectangle) {
+  fn get_logical(self, ctx: *mut Context) -> (Vector2, Rectangle) {
     lp := Vector2.{
       x: self.position.x + ctx.cell_size.x / 2,
       y: self.position.y + ctx.cell_size.y / 2,
@@ -163,7 +162,7 @@ impl Tower {
     );
   }
 
-  get_visual_rect :: fn(self, ctx: *mut Context) -> Rectangle {
+  fn get_visual_rect(self, ctx: *mut Context) -> Rectangle {
     return.{
       x: self.position.x,
       y: self.position.y,
@@ -174,9 +173,9 @@ impl Tower {
 }
 
 impl Enemy {
-  new :: fn(ctx: *mut Context) -> #self {
+  fn new(ctx: *mut Context) -> Self {
     #static id := 0 as u64;
-    mut self: #self = .{
+    mut self: Self = .{
       position: ctx.path[0],
       sprite: &mut ctx.enemy_sprite
       targeting_radius: 52,
@@ -199,13 +198,13 @@ impl Enemy {
   }
 }
 
-init :: fn() {
+fn init() {
   SetTraceLogLevel(TraceLogLevel::LOG_NONE);
   InitWindow(800, 600, "Hello, Raylib!"c);
   SetTargetFPS(60);
 }
 
-point_obstructs_path :: fn(ctx: *mut Context, tower: *mut Tower) -> bool {
+fn point_obstructs_path(ctx: *mut Context, tower: *mut Tower) -> bool {
   mut last_node := ctx.path[0];
   mut first := true;
   for node in ctx.path {
@@ -270,7 +269,7 @@ point_obstructs_path :: fn(ctx: *mut Context, tower: *mut Tower) -> bool {
   return false; // No collision with any path segment
 }
 
-run :: fn(ctx: *mut Context) {
+fn run(ctx: *mut Context) {
 
   // Adjust path points to ensure they travel through the center of each cell.
   // The path is hand written and likely off kilter.
@@ -413,6 +412,38 @@ run :: fn(ctx: *mut Context) {
         logical_position, logical_rect := tower.get_logical(ctx);
         tower_rect := tower.get_visual_rect(ctx);
 
+        // Targeting enemies and dealing damage.
+        mut closest_enemy: *mut Enemy;
+
+        for enemy in ctx.enemies.iter_mut() {
+          if CheckCollisionPointCircle(enemy.position, logical_position, tower.targeting_radius) {
+            if !closest_enemy {
+              closest_enemy = enemy;
+            } else {
+              distance := fabs(Vector2Distance(logical_position, closest_enemy.position));
+              current  :=  fabs(Vector2Distance(logical_position, enemy.position));
+              if distance < current {
+                closest_enemy = enemy;
+              }
+            }
+          }
+        }
+
+        if closest_enemy {
+          if tower.hit_timer.tick() {
+            closest_enemy.health -= tower.damage;
+            tower.target = closest_enemy;
+            if closest_enemy.health <= 0.0 {
+              ctx.enemies.remove(*closest_enemy, fn(other: Enemy, seek: Enemy) -> bool {
+                return other.id == seek.id;
+              });
+              tower.target = null;
+            }
+          }
+        } else {
+          tower.target = null;
+        }
+
         // Place tower.
         cursor_point := GetMousePosition();
         mut color := ColorAlpha(BLUE, 0.175);
@@ -449,44 +480,12 @@ run :: fn(ctx: *mut Context) {
         
         DrawCircleV(logical_position, tower.targeting_radius, ColorAlpha(RED, 0.25));
 
-        // Targeting enemies and dealing damage.
-        mut closest_enemy: *mut Enemy;
-
-        for enemy in ctx.enemies.iter_mut() {
-          if CheckCollisionPointCircle(enemy.position, logical_position, tower.targeting_radius) {
-            if !closest_enemy {
-              closest_enemy = enemy;
-            } else {
-              distance := fabs(Vector2Distance(logical_position, closest_enemy.position));
-              current  :=  fabs(Vector2Distance(logical_position, enemy.position));
-              if distance > current {
-                closest_enemy = enemy;
-              }
-            }
-          }
-        }
-
-        if closest_enemy {
-          if tower.hit_timer.tick() {
-            closest_enemy.health -= tower.damage;
-            tower.target = closest_enemy;
-            if closest_enemy.health <= 0.0 {
-              ctx.enemies.remove(*closest_enemy, fn(other: Enemy, seek: Enemy) -> bool {
-                return other.id == seek.id;
-              });
-              tower.target = null;
-            }
-          }
-        } else {
-          tower.target = null;
-        }
-
       }
 
   }
 }
 
-main :: fn() {
+fn main() {
   init();
   mut ctx := Context::new();
   run(&mut ctx);
